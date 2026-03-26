@@ -1,8 +1,12 @@
-const MINIMAX_API_BASE = "https://api.minimax.io/v1";
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const GEMINI_FLASH_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
 
 function getApiKey(): string {
-  const key = process.env.MINIMAX_API_KEY ?? process.env.NEXT_PUBLIC_MINIMAX_API_KEY;
-  if (!key) throw new Error("MINIMAX_API_KEY is not set");
+  const key =
+    process.env.GEMINI_API_KEY ??
+    process.env.MINIMAX_API_KEY ??
+    process.env.NEXT_PUBLIC_MINIMAX_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not set");
   return key;
 }
 
@@ -12,35 +16,45 @@ function cleanResponse(content: string): string {
   return cleaned;
 }
 
+function extractGeminiText(data: unknown): string {
+  const candidate = (data as { candidates?: { content?: { parts?: { text?: string }[] } }[] }).candidates?.[0];
+  const parts = candidate?.content?.parts ?? [];
+  const text = parts
+    .map((part) => part.text ?? "")
+    .join("")
+    .trim();
+
+  return cleanResponse(text);
+}
+
 export async function callMinimaxText(
   systemPrompt: string,
   userPrompt: string,
   opts?: { temperature?: number; maxOutputTokens?: number }
 ): Promise<string> {
-  const response = await fetch(`${MINIMAX_API_BASE}/chat/completions`, {
+  const response = await fetch(`${GEMINI_API_BASE}/${GEMINI_FLASH_MODEL}:generateContent?key=${getApiKey()}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getApiKey()}`,
     },
     body: JSON.stringify({
-      model: "MiniMax-M2.7",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: opts?.temperature ?? 0.3,
-      max_tokens: opts?.maxOutputTokens ?? 2048,
+      systemInstruction: {
+        parts: [{ text: systemPrompt }],
+      },
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      generationConfig: {
+        temperature: opts?.temperature ?? 0.3,
+        maxOutputTokens: opts?.maxOutputTokens ?? 2048,
+      },
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Minimax API error: ${response.status}`);
+    throw new Error(`Gemini API error: ${response.status}`);
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content ?? "";
-  return cleanResponse(content);
+  return extractGeminiText(data);
 }
 
 export async function callMinimaxMultimodal(
@@ -49,37 +63,40 @@ export async function callMinimaxMultimodal(
   imageBase64: string,
   mimeType: string
 ): Promise<string> {
-  const response = await fetch(`${MINIMAX_API_BASE}/chat/completions`, {
+  const response = await fetch(`${GEMINI_API_BASE}/${GEMINI_FLASH_MODEL}:generateContent?key=${getApiKey()}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getApiKey()}`,
     },
     body: JSON.stringify({
-      model: "MiniMax-M2.7",
-      messages: [
-        { role: "system", content: systemPrompt },
+      systemInstruction: {
+        parts: [{ text: systemPrompt }],
+      },
+      contents: [
         {
           role: "user",
-          content: [
-            { type: "text", text: userPrompt },
+          parts: [
+            { text: userPrompt },
             {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+              inlineData: {
+                mimeType,
+                data: imageBase64,
+              },
             },
           ],
         },
       ],
-      temperature: 0.2,
-      max_tokens: 1024,
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+      },
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Minimax API error: ${response.status}`);
+    throw new Error(`Gemini API error: ${response.status}`);
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content ?? "";
-  return cleanResponse(content);
+  return extractGeminiText(data);
 }
