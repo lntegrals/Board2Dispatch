@@ -91,3 +91,14 @@ export interface ActionOutput {
   title: string;
   sections: { heading: string; body: string }[];
 }
+
+export interface DispatchWarning {
+  message: string;
+  severity: "info" | "caution" | "alert";
+}
+
+export interface ParseResult {
+  workflow: Workflow;
+  followUps: FollowUpQuestion[];
+  warnings: DispatchWarning[];
+}

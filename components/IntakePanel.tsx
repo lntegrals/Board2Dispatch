@@ -10,6 +10,7 @@ interface Props {
   onSubmit: (context: DailyContext) => void;
   loading: boolean;
   onLoadDemo: () => void;
+  error?: string | null;
 }
 
 const QUICK_CHIPS = [
@@ -19,7 +20,7 @@ const QUICK_CHIPS = [
   { label: "Parts delayed", text: "Parts delivery is delayed — some jobs may need to be rescheduled or parts sourced locally." },
 ];
 
-export default function IntakePanel({ onSubmit, loading, onLoadDemo }: Props) {
+export default function IntakePanel({ onSubmit, loading, onLoadDemo, error }: Props) {
   const [typedText, setTypedText] = useState("");
   const [rulesText, setRulesText] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -30,6 +31,7 @@ export default function IntakePanel({ onSubmit, loading, onLoadDemo }: Props) {
     | { state: "fallback"; questions: string[]; answers: string[] }
   >(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const voice = useVoiceInput();
 
   const handleImageUpload = async (file: File) => {
@@ -221,37 +223,68 @@ export default function IntakePanel({ onSubmit, loading, onLoadDemo }: Props) {
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
             Whiteboard Photo
           </label>
-          <div
-            onClick={() => fileRef.current?.click()}
-            className={`group flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed cursor-pointer transition-all py-6 px-4 ${
-              imageFile
-                ? "border-indigo-300 bg-indigo-50/30"
-                : "border-gray-200 hover:border-indigo-300 bg-gray-50 hover:bg-indigo-50/20"
-            }`}
-          >
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleImageUpload(f);
-              }}
-            />
-            <div className="w-10 h-10 rounded-xl bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
-              <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            {imageFile ? (
-              <span className="text-xs font-medium text-indigo-600">{imageFile.name}</span>
-            ) : (
-              <div className="text-center">
-                <p className="text-sm text-gray-500 font-medium">Upload whiteboard photo</p>
-                <p className="text-xs text-gray-400 mt-0.5">AI will extract all text automatically</p>
+          <div className="flex gap-3">
+            {/* Take Photo button */}
+            <button
+              onClick={() => cameraRef.current?.click()}
+              className={`flex-1 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed cursor-pointer transition-all py-6 px-4 ${
+                imageFile
+                  ? "border-indigo-300 bg-indigo-50/30"
+                  : "border-gray-200 hover:border-indigo-300 bg-gray-50 hover:bg-indigo-50/20"
+              }`}
+            >
+              <input
+                ref={cameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleImageUpload(f);
+                }}
+              />
+              <div className="w-10 h-10 rounded-xl bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
+                <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
               </div>
-            )}
+              <div className="text-center">
+                <p className="text-sm text-gray-500 font-medium">Take Photo</p>
+                <p className="text-xs text-gray-400 mt-0.5">Open camera</p>
+              </div>
+            </button>
+
+            {/* Upload button */}
+            <button
+              onClick={() => fileRef.current?.click()}
+              className={`flex-1 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed cursor-pointer transition-all py-6 px-4 ${
+                imageFile
+                  ? "border-indigo-300 bg-indigo-50/30"
+                  : "border-gray-200 hover:border-indigo-300 bg-gray-50 hover:bg-indigo-50/20"
+              }`}
+            >
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleImageUpload(f);
+                }}
+              />
+              <div className="w-10 h-10 rounded-xl bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
+                <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="text-sm text-gray-500 font-medium">Upload</p>
+                <p className="text-xs text-gray-400 mt-0.5">Choose file</p>
+              </div>
+            </button>
           </div>
 
           {imageStatus?.state === "extracting" && (
@@ -303,6 +336,21 @@ export default function IntakePanel({ onSubmit, loading, onLoadDemo }: Props) {
             className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 placeholder-gray-300 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent leading-relaxed"
           />
         </div>
+
+        {/* Error banner */}
+        {error && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <p className="text-sm font-medium text-amber-800">AI parsing failed — using demo mode</p>
+                <p className="text-xs text-amber-600 mt-1">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* CTA */}
         <button

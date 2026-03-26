@@ -12,12 +12,18 @@ interface Props {
 export default function ActionPanel({ plan, workflow }: Props) {
   const [loading, setLoading] = useState<"briefings" | "etas" | null>(null);
   const [output, setOutput] = useState<ActionOutput | null>(null);
+  const [streamingText, setStreamingText] = useState<string>("");
   const [copied, setCopied] = useState<number | null>(null);
 
   const handleBriefings = async () => {
     setLoading("briefings");
+    setOutput(null);
+    setStreamingText("");
     try {
-      const result = await generateTechBriefings(plan, workflow);
+      const result = await generateTechBriefings(plan, workflow, (chunk) => {
+        setStreamingText((prev) => prev + chunk);
+      });
+      setStreamingText("");
       setOutput(result);
     } finally {
       setLoading(null);
@@ -26,8 +32,13 @@ export default function ActionPanel({ plan, workflow }: Props) {
 
   const handleETAs = async () => {
     setLoading("etas");
+    setOutput(null);
+    setStreamingText("");
     try {
-      const result = await generateCustomerETAs(plan, workflow);
+      const result = await generateCustomerETAs(plan, workflow, (chunk) => {
+        setStreamingText((prev) => prev + chunk);
+      });
+      setStreamingText("");
       setOutput(result);
     } finally {
       setLoading(null);
@@ -88,6 +99,28 @@ export default function ActionPanel({ plan, workflow }: Props) {
           <span>Share Dispatch Link</span>
         </button>
       </div>
+
+      {/* Streaming modal — live text while generating */}
+      {streamingText && !output && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="text-base font-bold text-gray-900">
+                {loading === "briefings" ? "Tech Briefings — Today's Dispatch" : "Customer ETA Messages"}
+              </h3>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                <span className="text-xs text-gray-400">Generating…</span>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-mono">
+                {streamingText}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Output modal */}
       {output && (

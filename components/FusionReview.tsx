@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { DailyContext, FollowUpQuestion, Workflow } from "@/lib/types";
+import type { DailyContext, FollowUpQuestion, Workflow, DispatchWarning } from "@/lib/types";
 
 interface Props {
   context: DailyContext;
   followUps: FollowUpQuestion[];
   workflow: Workflow;
+  warnings?: DispatchWarning[];
   onBuildPlan: (answers: FollowUpQuestion[]) => void;
   onBack: () => void;
   loading: boolean;
@@ -16,6 +17,7 @@ export default function FusionReview({
   context,
   followUps,
   workflow,
+  warnings,
   onBuildPlan,
   onBack,
   loading,
@@ -157,6 +159,34 @@ export default function FusionReview({
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* AI Warnings */}
+        {warnings && warnings.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
+              AI Warnings
+            </label>
+            <div className="flex flex-col gap-2">
+              {warnings.map((w, i) => (
+                <div
+                  key={i}
+                  className={`flex items-start gap-2.5 rounded-xl px-4 py-3 text-sm ${
+                    w.severity === "alert"
+                      ? "bg-red-50 border border-red-200 text-red-800"
+                      : w.severity === "caution"
+                      ? "bg-amber-50 border border-amber-200 text-amber-800"
+                      : "bg-blue-50 border border-blue-100 text-blue-800"
+                  }`}
+                >
+                  <span className="flex-shrink-0 font-bold mt-0.5">
+                    {w.severity === "alert" ? "!" : w.severity === "caution" ? "!" : "i"}
+                  </span>
+                  <span className="leading-relaxed">{w.message}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}

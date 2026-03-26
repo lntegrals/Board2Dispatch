@@ -1,14 +1,16 @@
 /**
  * Board2Dispatch Parser
  *
- * Uses Gemini API (gemini-2.0-flash) to extract structured dispatch data from
+ * Uses MiniMax API (MiniMax-M2.7) to extract structured dispatch data from
  * messy natural language input (whiteboard notes, dispatcher memos, etc.).
+ * Also generates situation-specific follow-up questions and proactive warnings
+ * in the same API call, eliminating the sequential latency of a second call.
  *
  * Falls back to a local heuristic parser when the API key is not set,
  * so the app works out-of-the-box in demo mode.
  */
 
-import type { Workflow, Worker, Job, Rule, Priority } from "./types";
+import type { Workflow, Worker, Job, Rule, Priority, FollowUpQuestion, DispatchWarning, ParseResult } from "./types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,51 +20,118 @@ interface ParsedOutput {
   workers: Omit<Worker, "status">[];
   jobs: Omit<Job, "status">[];
   rules: Omit<Rule, "id">[];
+  followUps?: { question: string }[];
+  warnings?: { message: string; severity: "info" | "caution" | "alert" }[];
 }
 
 // ---------------------------------------------------------------------------
-// Gemini API call
+// Default fallback questions (used when API is unavailable)
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are a dispatch data extraction assistant for an HVAC company.
-Extract structured data from messy dispatcher notes and return ONLY valid JSON.
+export const DEFAULT_QUESTIONS: FollowUpQuestion[] = [
+  {
+    id: "fq1",
+    question: "Are any technicians unavailable today due to illness, training, or other reasons?",
+    answer: "",
+  },
+  {
+    id: "fq2",
+    question: "Are there any emergency or same-day calls that weren't mentioned in the notes?",
+    answer: "",
+  },
+  {
+    id: "fq3",
+    question: "Are any customers flagged as VIP or high-priority accounts that need special attention?",
+    answer: "",
+  },
+];
+
+// ---------------------------------------------------------------------------
+// MiniMax API call
+// ---------------------------------------------------------------------------
+
+const SYSTEM_PROMPT = `You are an expert HVAC dispatch coordinator AI with 15+ years of field experience.
+Extract structured dispatch data from messy dispatcher notes and return ONLY valid JSON.
 No explanation, no markdown fences — just the raw JSON object.
 
-Output format:
+=== HVAC SKILL TAXONOMY ===
+Use these skill tags: hvac, electrical, refrigeration, duct, commercial, plumbing, controls, geothermal, boiler, senior, epa608, mini-split, vrf, chiller
+Certifications: EPA 608 (required for any refrigerant work — R-410A, R-22, R-32, R-407C)
+Refrigerants: R-410A (modern systems post-2010), R-22 (legacy, phase-out)
+
+=== PRIORITY KEYWORDS ===
+urgent: "no cool", "no AC", "no heat", "AC out", "heat out", "water leak from unit", "electrical smell", "burning smell", "no air", "been down", "baby", "infant", "elderly", "hospital", "medical equipment", "not working", "broken", "out", "asap", "emergency"
+high: "tenant complaint", "commercial building", "office down", "VIP", "same day", "today only", "escalated", "paid in full", "critical", "important", "priority"
+normal: scheduled maintenance, tune-ups, inspections
+low: quotes, estimates, non-urgent inspections
+
+=== ESTIMATED MINUTES BY JOB TYPE ===
+Emergency no-cool/no-heat: 90-120 | Refrigerant recharge: 60-90 | RTU/rooftop service: 120-180
+Mini-split install (per zone): 120-180 | Thermostat replacement: 30-45 | Annual tune-up: 60-90
+Duct repair/sealing: 90-120 | Electrical panel work: 60-90 | New system install: 240-480
+
+Return ONLY this JSON and nothing else:
 {
-  "workers": [{ "id": "w1", "name": "...", "skills": ["hvac", "electrical"] }],
-  "jobs": [{ "id": "j1", "customerName": "...", "problem": "...", "priority": "urgent|high|normal|low", "requiredSkills": ["hvac"], "address": "...", "estimatedMinutes": 60 }],
-  "rules": [{ "condition": "...", "action": "..." }]
+  "workers": [{ "id": "w1", "name": "...", "skills": ["hvac", "epa608", "commercial"] }],
+  "jobs": [{ "id": "j1", "customerName": "...", "problem": "...", "priority": "urgent|high|normal|low", "requiredSkills": ["hvac", "refrigeration"], "address": "...", "estimatedMinutes": 90 }],
+  "rules": [{ "condition": "...", "action": "..." }],
+  "followUps": [
+    { "question": "..." },
+    { "question": "..." },
+    { "question": "..." }
+  ],
+  "warnings": [
+    { "message": "...", "severity": "info|caution|alert" }
+  ]
 }
 
-Priority levels: urgent (customer without AC/heat right now), high (same-day must-fix), normal (scheduled), low (maintenance).`;
+=== FOLLOW-UP QUESTION RULES ===
+Generate exactly 3 follow-up questions tailored to THIS specific dispatch situation.
+Look for: EPA 608 needed but no certified tech listed, more urgent jobs than available techs, missing addresses on urgent jobs, ambiguous priorities, required skills no tech has.
+Be specific — reference actual names, job types, and gaps found. NOT generic templates.
+Good: "Rivera job mentions refrigerant — is Marcus EPA 608 certified for R-410A work?"
+Bad: "Are any technicians unavailable today?"
 
-async function callGemini(prompt: string): Promise<string> {
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+=== WARNING RULES ===
+Proactively surface these (only include warnings that actually apply):
+- More urgent jobs than available techs → severity: "alert", e.g. "3 urgent jobs but only 2 techs available — consider calling in backup"
+- Refrigerant job but no tech with epa608 skill → severity: "alert"
+- Water leak from unit → severity: "caution" (may need plumber referral)
+- Burning smell or electrical smell → severity: "alert" (safety: check wiring before energizing)
+- Urgent job with no address listed → severity: "caution"
+- Required skill that no listed tech has → severity: "alert"
+Omit warnings that do not apply. Return an empty array if no issues found.`;
+
+async function callMinimax(prompt: string): Promise<string> {
+  const apiKey = process.env.NEXT_PUBLIC_MINIMAX_API_KEY;
 
   if (!apiKey) {
     throw new Error("NO_API_KEY");
   }
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 2000 },
-      }),
-    }
-  );
+  const response = await fetch("https://api.minimax.io/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "MiniMax-M2.7",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.2,
+      max_tokens: 4096,
+    }),
+  });
 
   if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status}`);
+    throw new Error(`Minimax API error: ${response.status}`);
   }
 
   const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  return data.choices?.[0]?.message?.content ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +169,7 @@ function inferPriority(text: string): Priority {
 
 function localParse(text: string, rulesText: string): ParsedOutput {
   const lines = text.split(/\n|,|;/).map((l) => l.trim()).filter(Boolean);
+  void lines;
 
   const workers: ParsedOutput["workers"] = [];
   const jobs: ParsedOutput["jobs"] = [];
@@ -186,20 +256,35 @@ function localParse(text: string, rulesText: string): ParsedOutput {
 export async function parseDispatchInput(
   inputText: string,
   rulesText: string = ""
-): Promise<Workflow> {
+): Promise<ParseResult> {
   let parsed: ParsedOutput;
 
   try {
     const prompt = `Extract dispatch data from these dispatcher notes:\n\n${inputText}\n\nRules:\n${rulesText}`;
-    const raw = await callGemini(prompt);
+    const raw = await callMinimax(prompt);
+
+    // Strip thinking/reasoning tags that M2.7 embeds before the JSON
+    let cleaned = raw.replace(/<think>[\s\S]*?<\/thinking>/g, "").trim();
 
     // Strip any markdown code fences if present
-    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    cleaned = cleaned.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+
+    // Extract JSON object - find first { and last }
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+
     const data = JSON.parse(cleaned) as ParsedOutput;
+    // If the AI returned empty workers AND jobs, treat as a parse failure
+    if (!data.workers?.length && !data.jobs?.length) {
+      throw new Error("Empty parse result from AI");
+    }
     parsed = data;
   } catch (err) {
     // Use local parser in demo/no-key mode
-    console.info("Gemini unavailable, using local parser:", err instanceof Error ? err.message : err);
+    console.info("Minimax unavailable, using local parser:", err instanceof Error ? err.message : err);
     parsed = localParse(inputText, rulesText);
   }
 
@@ -224,5 +309,18 @@ export async function parseDispatchInput(
     id: `rule${i + 1}`,
   }));
 
-  return { workers, jobs, rules };
+  const followUps: FollowUpQuestion[] = (parsed.followUps ?? [])
+    .slice(0, 3)
+    .map((q, i) => ({ id: `fq${i + 1}`, question: q.question, answer: "" }));
+
+  const warnings: DispatchWarning[] = (parsed.warnings ?? []).map((w) => ({
+    message: w.message,
+    severity: w.severity,
+  }));
+
+  return {
+    workflow: { workers, jobs, rules },
+    followUps: followUps.length > 0 ? followUps : DEFAULT_QUESTIONS,
+    warnings,
+  };
 }

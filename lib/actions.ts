@@ -1,5 +1,5 @@
 import type { PlanResult, Workflow, ActionOutput } from "./types";
-import { callGeminiText } from "./gemini";
+import { callGeminiStream } from "./gemini";
 
 function buildDispatchSummary(plan: PlanResult, workflow: Workflow): string {
   const workerMap = new Map(workflow.workers.map((w) => [w.id, w]));
@@ -34,25 +34,64 @@ function buildDispatchSummary(plan: PlanResult, workflow: Workflow): string {
   return lines.join("\n");
 }
 
+const BRIEFINGS_SYSTEM_PROMPT = `You are a dispatch coordinator for an HVAC company.
+Write a professional morning briefing for each technician based on their assigned jobs.
+Each briefing should include: the customer's issue in plain English, the exact address, what tools/parts to likely bring (infer from the problem), and a short encouraging note.
+Be specific and practical — a tech should be able to read this and go straight to work.
+
+=== HVAC FIELD KNOWLEDGE ===
+Common causes by symptom:
+- "Not blowing cold" / no-cool: Check refrigerant charge first (R-410A on post-2010, R-22 on pre-2010), then condenser coils, then compressor.
+- "Breaker tripping": Likely compressor drawing locked-rotor amps — check capacitor and contactor before condemning compressor.
+- "Not holding temperature": Thermostat calibration, refrigerant charge, or duct leakage.
+- "Water leak from unit": Clogged condensate drain — flush with nitrogen or shop vac.
+- "Burning smell" / electrical smell: Immediate safety — check wiring harness, capacitor, contactor for burn marks BEFORE energizing.
+
+Tools to recommend by job type:
+- Refrigerant work: manifold gauge set, electronic leak detector, recovery machine, refrigerant (verify type — R-410A vs R-22)
+- Electrical: multimeter, clamp meter, capacitor tester, replacement contactors
+- Mini-split install: vacuum pump, line set cutter, flare tool, torque wrench
+- Tune-up: fin comb, coil cleaner, condensate drain tablets
+- RTU/rooftop: fall protection, additional time (add 30 min for roof access)
+
+Return a JSON object with no markdown fences: { "sections": [{ "heading": "Tech Name", "body": "full briefing text" }] }`;
+
+const ETAS_SYSTEM_PROMPT = `You are a customer service coordinator for an HVAC company.
+Draft short, professional ETA text messages for each customer whose job is scheduled today.
+
+=== ETA MESSAGING GUIDELINES ===
+Arrival windows based on position in dispatch order:
+- 1st job: "between 8 and 10 this morning"
+- 2nd job: "mid-morning, around 10am–noon"
+- 3rd job: "early afternoon, between noon and 2pm"
+- 4th job or later: "this afternoon"
+For urgent jobs: always include "we've prioritized your call"
+For commercial/tenant situations: acknowledge "we understand your tenants are affected"
+Keep each message under 160 characters when possible (SMS-friendly).
+Never promise exact times — always give windows.
+Professional but warm — confirm tech's first name.
+
+Return a JSON object with no markdown fences: { "sections": [{ "heading": "Customer Name", "body": "message text" }] }`;
+
 export async function generateTechBriefings(
   plan: PlanResult,
-  workflow: Workflow
+  workflow: Workflow,
+  onChunk?: (partial: string) => void
 ): Promise<ActionOutput> {
   const summary = buildDispatchSummary(plan, workflow);
 
   try {
-    const systemPrompt = `You are a dispatch coordinator for an HVAC company.
-Write a professional morning briefing for each technician based on their assigned jobs.
-Each briefing should include: the customer's issue in plain English, the exact address, what tools/parts to likely bring (infer from the problem), and a short encouraging note.
-Be specific and practical — a tech should be able to read this and go straight to work.
-Return a JSON object with no markdown fences: { "sections": [{ "heading": "Tech Name", "body": "full briefing text" }] }`;
-
-    const raw = await callGeminiText(systemPrompt, summary, {
+    const raw = await callGeminiStream(BRIEFINGS_SYSTEM_PROMPT, summary, {
       temperature: 0.6,
       maxOutputTokens: 3000,
-    });
+    }, onChunk);
     const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleaned) as { sections: { heading: string; body: string }[] };
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    const jsonStr = firstBrace !== -1 && lastBrace !== -1
+      ? cleaned.substring(firstBrace, lastBrace + 1)
+      : cleaned;
+    const parsed = JSON.parse(jsonStr) as { sections: { heading: string; body: string }[] };
 
     return {
       type: "briefings",
@@ -85,23 +124,23 @@ Return a JSON object with no markdown fences: { "sections": [{ "heading": "Tech 
 
 export async function generateCustomerETAs(
   plan: PlanResult,
-  workflow: Workflow
+  workflow: Workflow,
+  onChunk?: (partial: string) => void
 ): Promise<ActionOutput> {
   const summary = buildDispatchSummary(plan, workflow);
 
   try {
-    const systemPrompt = `You are a customer service coordinator for an HVAC company.
-Draft short, professional ETA text messages for each customer whose job is scheduled today.
-Each message should: confirm the technician's first name, give a friendly estimated arrival window (use "this morning", "late morning", "this afternoon", etc.), and be reassuring.
-Keep each message under 3 sentences. Professional but warm.
-Return a JSON object with no markdown fences: { "sections": [{ "heading": "Customer Name", "body": "message text" }] }`;
-
-    const raw = await callGeminiText(systemPrompt, summary, {
+    const raw = await callGeminiStream(ETAS_SYSTEM_PROMPT, summary, {
       temperature: 0.6,
       maxOutputTokens: 3000,
-    });
+    }, onChunk);
     const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleaned) as { sections: { heading: string; body: string }[] };
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    const jsonStr = firstBrace !== -1 && lastBrace !== -1
+      ? cleaned.substring(firstBrace, lastBrace + 1)
+      : cleaned;
+    const parsed = JSON.parse(jsonStr) as { sections: { heading: string; body: string }[] };
 
     return {
       type: "etas",

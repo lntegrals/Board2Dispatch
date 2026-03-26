@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type {
   Workflow,
   PlanningStatus,
@@ -10,11 +10,11 @@ import type {
   JobExplanation,
   ScenarioDelta,
   PlanResult,
+  DispatchWarning,
 } from "@/lib/types";
-import { parseDispatchInput } from "@/lib/parser";
+import { parseDispatchInput, DEFAULT_QUESTIONS } from "@/lib/parser";
 import { planDispatch, applyPlanToWorkflow } from "@/lib/planner";
 import { buildExplanationMap } from "@/lib/explanations";
-import { generateFollowUpQuestions } from "@/lib/followUpQuestions";
 import { applyScenario } from "@/lib/scenarios";
 import type { ScenarioPayload } from "@/lib/scenarios";
 import { DEMO_WORKFLOW, DEMO_CONTEXT } from "@/lib/demoData";
@@ -24,6 +24,8 @@ import StructurePanel from "@/components/StructurePanel";
 import DispatchBoard from "@/components/DispatchBoard";
 import ScenarioBar from "@/components/ScenarioBar";
 import ActionPanel from "@/components/ActionPanel";
+import VoiceCommandBar from "@/components/VoiceCommandBar";
+import type { VoiceCommand } from "@/lib/voiceCommands";
 
 const EMPTY_WORKFLOW: Workflow = { workers: [], jobs: [], rules: [] };
 
@@ -43,23 +45,27 @@ export default function Home() {
   const [plan, setPlan] = useState<PlanResult | null>(null);
   const [explanations, setExplanations] = useState<Map<string, JobExplanation>>(new Map());
   const [scenarioDelta, setScenarioDelta] = useState<ScenarioDelta | null>(null);
+  const [warnings, setWarnings] = useState<DispatchWarning[]>([]);
   const [conflicts, setConflicts] = useState<string[]>([]);
   const [intakeLoading, setIntakeLoading] = useState(false);
   const [planLoading, setPlanLoading] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   // INTAKE → REVIEW
   const handleUnderstandToday = async (context: DailyContext) => {
     setIntakeLoading(true);
     setDailyContext(context);
+    setParseError(null);
     try {
-      const parsed = await parseDispatchInput(context.mergedText, context.rulesText);
-      setWorkflow(parsed);
-      const questions = await generateFollowUpQuestions(parsed, context);
-      setFollowUps(questions);
+      const result = await parseDispatchInput(context.mergedText, context.rulesText);
+      setWorkflow(result.workflow);
+      setFollowUps(result.followUps);
+      setWarnings(result.warnings);
       setPhase("review");
-    } catch {
-      // Still proceed to review even if parsing fails
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setParseError(msg);
       setWorkflow(EMPTY_WORKFLOW);
       setFollowUps([]);
       setPhase("review");
@@ -84,7 +90,8 @@ export default function Home() {
       if (answeredText && workflow.workers.length > 0) {
         const enriched = dailyContext.mergedText + (answeredText ? `\n\n[Dispatcher clarifications]\n${answeredText}` : "");
         try {
-          baseWorkflow = await parseDispatchInput(enriched, dailyContext.rulesText);
+          const result = await parseDispatchInput(enriched, dailyContext.rulesText);
+          baseWorkflow = result.workflow;
         } catch {
           baseWorkflow = workflow;
         }
@@ -118,18 +125,13 @@ export default function Home() {
     }
   };
 
-  // Load demo — skip straight to review
-  const handleLoadDemo = async () => {
-    setIntakeLoading(true);
+  // Load demo — skip straight to review (no API call needed)
+  const handleLoadDemo = () => {
     setDailyContext(DEMO_CONTEXT);
-    try {
-      setWorkflow(DEMO_WORKFLOW);
-      const questions = await generateFollowUpQuestions(DEMO_WORKFLOW, DEMO_CONTEXT);
-      setFollowUps(questions);
-      setPhase("review");
-    } finally {
-      setIntakeLoading(false);
-    }
+    setWorkflow(DEMO_WORKFLOW);
+    setFollowUps(DEFAULT_QUESTIONS);
+    setWarnings([]);
+    setPhase("review");
   };
 
   // Scenario replanning
@@ -176,6 +178,57 @@ export default function Home() {
     }));
   };
 
+  const handleVoiceCommand = useCallback((command: VoiceCommand) => {
+    switch (command.type) {
+      case "status_change":
+        if (command.params.jobId && command.params.status) {
+          handleStatusChange(command.params.jobId, command.params.status);
+        }
+        break;
+      case "tech_unavailable":
+        handleScenario({ type: "tech_unavailable", techId: command.params.techId });
+        break;
+      case "new_emergency":
+        handleScenario({
+          type: "new_emergency",
+          emergencyJob: {
+            customerName: command.params.emergencyCustomerName,
+            problem: command.params.emergencyProblem,
+            address: command.params.emergencyAddress,
+          },
+        });
+        break;
+      case "customer_escalated":
+        handleScenario({ type: "customer_escalated", jobId: command.params.jobId });
+        break;
+      case "rebalance":
+        handleScenario({ type: "rebalance" });
+        break;
+      case "reassign": {
+        const { techId, jobIds, jobId } = command.params;
+        if (!techId) break;
+        const ids = jobIds?.length ? jobIds : jobId ? [jobId] : [];
+        if (ids.length === 0) break;
+        setWorkflow((prev) => {
+          const worker = prev.workers.find((w) => w.id === techId);
+          if (!worker) return prev;
+          return {
+            ...prev,
+            jobs: prev.jobs.map((j) =>
+              ids.includes(j.id)
+                ? { ...j, status: "assigned" as const, assignedWorkerId: worker.id, assignedWorkerName: worker.name }
+                : j
+            ),
+          };
+        });
+        break;
+      }
+      // query: answer already spoken by VoiceCommandBar via speechSynthesis
+      // generate_*: confirmation text spoken as a hint; user still clicks the button
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── INTAKE phase ──────────────────────────────────────────────────────────
   if (phase === "intake") {
     return (
@@ -183,6 +236,7 @@ export default function Home() {
         onSubmit={handleUnderstandToday}
         loading={intakeLoading}
         onLoadDemo={handleLoadDemo}
+        error={parseError}
       />
     );
   }
@@ -194,6 +248,7 @@ export default function Home() {
         context={dailyContext}
         followUps={followUps}
         workflow={workflow}
+        warnings={warnings}
         onBuildPlan={handleBuildPlan}
         onBack={() => setPhase("intake")}
         loading={planLoading}
@@ -344,6 +399,15 @@ export default function Home() {
           />
         </div>
       </main>
+
+      {/* Voice Command — floating overlay, outside scroll context */}
+      {plan && (
+        <VoiceCommandBar
+          workflow={workflow}
+          plan={plan}
+          onCommand={handleVoiceCommand}
+        />
+      )}
     </div>
   );
 }
