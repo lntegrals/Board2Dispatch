@@ -175,6 +175,8 @@ export async function parseVoiceCommand(
 ): Promise<VoiceCommand> {
   const localCandidate = fallbackParseVoiceCommand(transcript, workflow);
 
+  const localCandidate = fallbackParseVoiceCommand(transcript, workflow);
+
   try {
     const response = await fetch("/api/ai/voice", {
       method: "POST",
