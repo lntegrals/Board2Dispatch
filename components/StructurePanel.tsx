@@ -97,7 +97,7 @@ export default function StructurePanel({
             {workflow.workers.map((worker) => (
               <div
                 key={worker.id}
-                className="flex items-center gap-3 p-3 rounded-xl bg-white border border-gray-100 shadow-sm hover:border-gray-200 transition-colors"
+                className="flex flex-wrap sm:flex-nowrap items-center gap-3 p-3 rounded-xl bg-white border border-gray-100 shadow-sm hover:border-gray-200 transition-colors"
               >
                 <div className="relative flex-shrink-0">
                   <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-sm font-semibold text-indigo-700">
@@ -127,7 +127,7 @@ export default function StructurePanel({
                 <select
                   value={worker.status}
                   onChange={(e) => updateWorker(worker.id, "status", e.target.value)}
-                  className="text-xs text-gray-500 bg-transparent border-none focus:outline-none cursor-pointer"
+                  className="text-xs text-gray-500 bg-transparent border-none focus:outline-none cursor-pointer ml-auto sm:ml-0"
                 >
                   <option value="available">Available</option>
                   <option value="busy">Busy</option>
@@ -152,7 +152,7 @@ export default function StructurePanel({
                 key={job.id}
                 className="p-3 rounded-xl bg-white border border-gray-100 shadow-sm hover:border-gray-200 transition-colors"
               >
-                <div className="flex items-start gap-2">
+                <div className="flex flex-col sm:flex-row items-start gap-2">
                   <div className="flex-1 min-w-0">
                     <input
                       className="text-sm font-semibold text-gray-900 bg-transparent w-full focus:outline-none focus:bg-gray-50 rounded px-1 -ml-1"
@@ -265,7 +265,7 @@ export default function StructurePanel({
       )}
 
       {/* Run dispatch */}
-      <div className="sticky bottom-0 pt-2 bg-gradient-to-t from-slate-50 to-transparent">
+      <div className="sticky bottom-0 pt-2 bg-gradient-to-t from-white to-transparent">
         <button
           onClick={onRunDispatch}
           disabled={planLoading || workflow.jobs.length === 0}

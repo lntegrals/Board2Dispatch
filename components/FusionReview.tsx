@@ -39,7 +39,7 @@ export default function FusionReview({
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50/30 flex flex-col">
       {/* Header */}
       <header className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -58,8 +58,8 @@ export default function FusionReview({
       </header>
 
       {/* Progress */}
-      <div className="max-w-3xl mx-auto w-full px-6 pt-10 pb-4">
-        <div className="flex items-center gap-2 mb-6">
+      <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 pt-8 sm:pt-10 pb-4">
+        <div className="flex items-center gap-1.5 sm:gap-2 mb-6 overflow-x-auto pb-1">
           <div className="flex items-center gap-1.5">
             <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center">
               <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -92,11 +92,11 @@ export default function FusionReview({
         </p>
       </div>
 
-      <div className="max-w-3xl mx-auto w-full px-6 pb-12 flex flex-col gap-6">
+      <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 pb-12 flex flex-col gap-6">
 
         {/* Merged context */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
               Merged Context
             </label>
