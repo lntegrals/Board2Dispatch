@@ -1,73 +1,172 @@
 "use client";
 
 import { useState } from "react";
-import type { Workflow, PlanningStatus } from "@/lib/types";
+import type {
+  Workflow,
+  PlanningStatus,
+  AppPhase,
+  DailyContext,
+  FollowUpQuestion,
+  JobExplanation,
+  ScenarioDelta,
+  PlanResult,
+} from "@/lib/types";
 import { parseDispatchInput } from "@/lib/parser";
 import { planDispatch, applyPlanToWorkflow } from "@/lib/planner";
-import { DEMO_WORKFLOW } from "@/lib/demoData";
-import InputPanel from "@/components/InputPanel";
+import { buildExplanationMap } from "@/lib/explanations";
+import { generateFollowUpQuestions } from "@/lib/followUpQuestions";
+import { applyScenario } from "@/lib/scenarios";
+import type { ScenarioPayload } from "@/lib/scenarios";
+import { DEMO_WORKFLOW, DEMO_CONTEXT } from "@/lib/demoData";
+import IntakePanel from "@/components/IntakePanel";
+import FusionReview from "@/components/FusionReview";
 import StructurePanel from "@/components/StructurePanel";
 import DispatchBoard from "@/components/DispatchBoard";
+import ScenarioBar from "@/components/ScenarioBar";
+import ActionPanel from "@/components/ActionPanel";
 
 const EMPTY_WORKFLOW: Workflow = { workers: [], jobs: [], rules: [] };
 
-export default function Home() {
-  const [workflow, setWorkflow] = useState<Workflow>(EMPTY_WORKFLOW);
-  const [parseLoading, setParseLoading] = useState(false);
-  const [planLoading, setPlanLoading] = useState(false);
-  const [conflicts, setConflicts] = useState<string[]>([]);
-  const [hasAssignments, setHasAssignments] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
+const EMPTY_CONTEXT: DailyContext = {
+  typedText: "",
+  transcribedText: "",
+  imageExtractedText: "",
+  rulesText: "",
+  mergedText: "",
+};
 
-  const handleParse = async (notes: string, rules: string) => {
-    setParseLoading(true);
-    setParseError(null);
+export default function Home() {
+  const [phase, setPhase] = useState<AppPhase>("intake");
+  const [dailyContext, setDailyContext] = useState<DailyContext>(EMPTY_CONTEXT);
+  const [followUps, setFollowUps] = useState<FollowUpQuestion[]>([]);
+  const [workflow, setWorkflow] = useState<Workflow>(EMPTY_WORKFLOW);
+  const [plan, setPlan] = useState<PlanResult | null>(null);
+  const [explanations, setExplanations] = useState<Map<string, JobExplanation>>(new Map());
+  const [scenarioDelta, setScenarioDelta] = useState<ScenarioDelta | null>(null);
+  const [conflicts, setConflicts] = useState<string[]>([]);
+  const [intakeLoading, setIntakeLoading] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // INTAKE → REVIEW
+  const handleUnderstandToday = async (context: DailyContext) => {
+    setIntakeLoading(true);
+    setDailyContext(context);
     try {
-      // If the notes look like demo input, just return demo workflow instantly
-      if (notes.includes("Marcus Webb") && notes.includes("Rivera")) {
-        setWorkflow(DEMO_WORKFLOW);
-        setHasAssignments(false);
-        setConflicts([]);
-      } else {
-        const result = await parseDispatchInput(notes, rules);
-        setWorkflow(result);
-        setHasAssignments(false);
-        setConflicts([]);
-      }
+      const parsed = await parseDispatchInput(context.mergedText, context.rulesText);
+      setWorkflow(parsed);
+      const questions = await generateFollowUpQuestions(parsed, context);
+      setFollowUps(questions);
+      setPhase("review");
     } catch {
-      setParseError("Failed to parse input. Try loading the demo to see the expected format.");
+      // Still proceed to review even if parsing fails
+      setWorkflow(EMPTY_WORKFLOW);
+      setFollowUps([]);
+      setPhase("review");
     } finally {
-      setParseLoading(false);
+      setIntakeLoading(false);
     }
   };
 
-  const handleRunDispatch = async () => {
-    if (workflow.jobs.length === 0) return;
+  // REVIEW → DISPATCH
+  const handleBuildPlan = async (answers: FollowUpQuestion[]) => {
     setPlanLoading(true);
-
-    // Small delay to show loading state (plan is synchronous)
-    await new Promise((r) => setTimeout(r, 400));
-
     try {
-      // Reset jobs to unassigned before re-planning (preserve done jobs)
+      // Merge any follow-up answers into the workflow context
+      const answeredText = answers
+        .filter((q) => q.answer.trim())
+        .map((q) => `${q.question}\n${q.answer}`)
+        .join("\n\n");
+
+      let baseWorkflow = workflow;
+
+      // If there are answered questions, reparse with the enriched context
+      if (answeredText && workflow.workers.length > 0) {
+        const enriched = dailyContext.mergedText + (answeredText ? `\n\n[Dispatcher clarifications]\n${answeredText}` : "");
+        try {
+          baseWorkflow = await parseDispatchInput(enriched, dailyContext.rulesText);
+        } catch {
+          baseWorkflow = workflow;
+        }
+      }
+
+      // Small delay for UX
+      await new Promise((r) => setTimeout(r, 300));
+
       const resetWorkflow: Workflow = {
-        ...workflow,
-        jobs: workflow.jobs.map((j) =>
+        ...baseWorkflow,
+        jobs: baseWorkflow.jobs.map((j) =>
           j.status === "done"
             ? j
             : { ...j, status: "unassigned", assignedWorkerId: undefined, assignedWorkerName: undefined }
         ),
-        workers: workflow.workers.map((w) => ({ ...w, status: "available" as const })),
+        workers: baseWorkflow.workers.map((w) => ({ ...w, status: "available" as const })),
       };
 
-      const plan = planDispatch(resetWorkflow);
-      const updated = applyPlanToWorkflow(resetWorkflow, plan);
-      setWorkflow(updated);
-      setConflicts(plan.conflicts);
-      setHasAssignments(plan.assignments.length > 0);
+      const newPlan = planDispatch(resetWorkflow);
+      const updatedWorkflow = applyPlanToWorkflow(resetWorkflow, newPlan);
+      const expMap = buildExplanationMap(newPlan, updatedWorkflow);
+
+      setWorkflow(updatedWorkflow);
+      setPlan(newPlan);
+      setExplanations(expMap);
+      setConflicts(newPlan.conflicts);
+      setScenarioDelta(null);
+      setPhase("dispatch");
     } finally {
       setPlanLoading(false);
     }
+  };
+
+  // Load demo — skip straight to review
+  const handleLoadDemo = async () => {
+    setIntakeLoading(true);
+    setDailyContext(DEMO_CONTEXT);
+    try {
+      setWorkflow(DEMO_WORKFLOW);
+      const questions = await generateFollowUpQuestions(DEMO_WORKFLOW, DEMO_CONTEXT);
+      setFollowUps(questions);
+      setPhase("review");
+    } finally {
+      setIntakeLoading(false);
+    }
+  };
+
+  // Scenario replanning
+  const handleScenario = (payload: ScenarioPayload) => {
+    if (!plan) return;
+    const result = applyScenario(workflow, plan, payload);
+    setWorkflow(result.workflow);
+    setPlan(result.plan);
+    setExplanations(buildExplanationMap(result.plan, result.workflow));
+    setConflicts(result.plan.conflicts);
+    setScenarioDelta(result.delta);
+  };
+
+  // Manual dispatch re-run (from StructurePanel button)
+  const handleRunDispatch = async () => {
+    if (workflow.jobs.length === 0) return;
+    await new Promise((r) => setTimeout(r, 300));
+
+    const resetWorkflow: Workflow = {
+      ...workflow,
+      jobs: workflow.jobs.map((j) =>
+        j.status === "done"
+          ? j
+          : { ...j, status: "unassigned", assignedWorkerId: undefined, assignedWorkerName: undefined }
+      ),
+      workers: workflow.workers.map((w) => ({ ...w, status: "available" as const })),
+    };
+
+    const newPlan = planDispatch(resetWorkflow);
+    const updated = applyPlanToWorkflow(resetWorkflow, newPlan);
+    const expMap = buildExplanationMap(newPlan, updated);
+
+    setWorkflow(updated);
+    setPlan(newPlan);
+    setExplanations(expMap);
+    setConflicts(newPlan.conflicts);
+    setScenarioDelta(null);
   };
 
   const handleStatusChange = (jobId: string, status: PlanningStatus) => {
@@ -77,6 +176,33 @@ export default function Home() {
     }));
   };
 
+  // ── INTAKE phase ──────────────────────────────────────────────────────────
+  if (phase === "intake") {
+    return (
+      <IntakePanel
+        onSubmit={handleUnderstandToday}
+        loading={intakeLoading}
+        onLoadDemo={handleLoadDemo}
+      />
+    );
+  }
+
+  // ── REVIEW phase ──────────────────────────────────────────────────────────
+  if (phase === "review") {
+    return (
+      <FusionReview
+        context={dailyContext}
+        followUps={followUps}
+        workflow={workflow}
+        onBuildPlan={handleBuildPlan}
+        onBack={() => setPhase("intake")}
+        loading={planLoading}
+      />
+    );
+  }
+
+  // ── DISPATCH phase ────────────────────────────────────────────────────────
+  const hasAssignments = workflow.jobs.some((j) => j.status !== "unassigned");
   const urgentCount = workflow.jobs.filter((j) => j.priority === "urgent").length;
   const assignedCount = workflow.jobs.filter((j) => j.status !== "unassigned").length;
 
@@ -125,6 +251,12 @@ export default function Home() {
                 )}
               </div>
             )}
+            <button
+              onClick={() => setPhase("intake")}
+              className="text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors"
+            >
+              ← New day
+            </button>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-gray-400">Live</span>
@@ -133,42 +265,82 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main 3-column layout */}
-      <main className="max-w-screen-2xl mx-auto px-6 py-6 grid grid-cols-[300px_340px_1fr] gap-5 h-[calc(100vh-56px)]">
+      {/* Main dispatch layout */}
+      <main className="max-w-screen-2xl mx-auto px-6 py-6 h-[calc(100vh-56px)] flex gap-5">
 
-        {/* LEFT: Input */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col overflow-hidden">
-          {parseError && (
-            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 flex-shrink-0">
-              <p className="text-xs text-red-600">{parseError}</p>
+        {/* LEFT: Advanced / StructurePanel — collapsible */}
+        {showAdvanced && (
+          <div className="w-[300px] flex-shrink-0 bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col overflow-hidden phase-fade-in">
+            <div className="mb-3 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Advanced</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Edit Team &amp; Jobs</p>
+              </div>
+              <button
+                onClick={() => setShowAdvanced(false)}
+                className="text-gray-400 hover:text-gray-600 text-sm"
+              >
+                ✕
+              </button>
             </div>
-          )}
-          <InputPanel onParse={handleParse} loading={parseLoading} />
-        </div>
-
-        {/* CENTER: Structure */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col overflow-hidden">
-          <div className="mb-4 flex-shrink-0">
-            <h2 className="text-sm font-semibold text-gray-900 tracking-tight">Structure</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Extracted data — edit inline, then run dispatch</p>
+            <div className="flex-1 overflow-y-auto">
+              <StructurePanel
+                workflow={workflow}
+                onChange={setWorkflow}
+                onRunDispatch={handleRunDispatch}
+                hasAssignments={hasAssignments}
+                planLoading={false}
+              />
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto">
-            <StructurePanel
-              workflow={workflow}
-              onChange={setWorkflow}
-              onRunDispatch={handleRunDispatch}
-              hasAssignments={hasAssignments}
-              planLoading={planLoading}
-            />
+        )}
+
+        {/* CENTER: Controls + ScenarioBar + ActionPanel */}
+        <div className="w-[280px] flex-shrink-0 flex flex-col gap-4">
+          {/* Advanced toggle */}
+          {!showAdvanced && (
+            <button
+              onClick={() => setShowAdvanced(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 text-xs text-gray-500 font-medium shadow-sm transition-all"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              Advanced — Edit Team &amp; Jobs
+            </button>
+          )}
+
+          {/* Scenario section */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Scenarios</p>
+            {plan && (
+              <ScenarioBar
+                workflow={workflow}
+                plan={plan}
+                onApply={handleScenario}
+                delta={scenarioDelta}
+                onDismissDelta={() => setScenarioDelta(null)}
+              />
+            )}
+          </div>
+
+          {/* Actions section */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Actions</p>
+            {plan && (
+              <ActionPanel plan={plan} workflow={workflow} />
+            )}
           </div>
         </div>
 
         {/* RIGHT: Dispatch Board */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col overflow-hidden flex-1">
           <DispatchBoard
             jobs={workflow.jobs}
             onStatusChange={handleStatusChange}
             conflicts={conflicts}
+            explanations={explanations}
+            scenarioDelta={scenarioDelta}
           />
         </div>
       </main>

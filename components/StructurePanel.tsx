@@ -79,7 +79,7 @@ export default function StructurePanel({
         </div>
         <div>
           <p className="text-sm font-medium text-gray-500">No data yet</p>
-          <p className="text-xs text-gray-400 mt-1">Parse notes to extract jobs &amp; workers</p>
+          <p className="text-xs text-gray-400 mt-1">Build a plan to see team &amp; jobs</p>
         </div>
       </div>
     );

@@ -1,4 +1,4 @@
-import type { Workflow } from "./types";
+import type { Workflow, DailyContext } from "./types";
 
 export const DEMO_NOTES = `Tech: Marcus Webb — HVAC senior, commercial cert
 Tech: Priya Okonkwo — HVAC, electrical, refrigeration
@@ -14,6 +14,14 @@ export const DEMO_RULES = `If job is urgent, assign senior tech first
 Commercial jobs require commercial certification
 Don't assign more than 3 jobs per tech
 If worker is en route, prefer other available techs`;
+
+export const DEMO_CONTEXT: DailyContext = {
+  typedText: `Morning update — rough night. Rivera called at 6am, AC completely dead, baby in the house. Thornfield is also blowing up, tenants on third floor are baking. Marcus and Priya should handle the urgent calls first. Danny can start with the Chen tune-up since it's scheduled for 2pm and is low-stress. Martinez paid upfront so we need to make that happen today.`,
+  transcribedText: "",
+  imageExtractedText: "",
+  rulesText: DEMO_RULES,
+  mergedText: `Morning update — rough night. Rivera called at 6am, AC completely dead, baby in the house. Thornfield is also blowing up, tenants on third floor are baking. Marcus and Priya should handle the urgent calls first. Danny can start with the Chen tune-up since it's scheduled for 2pm and is low-stress. Martinez paid upfront so we need to make that happen today.`,
+};
 
 export const DEMO_WORKFLOW: Workflow = {
   workers: [
@@ -40,7 +48,7 @@ export const DEMO_WORKFLOW: Workflow = {
     {
       id: "j1",
       customerName: "Rivera Residence",
-      problem: "AC not blowing cold — down since last night",
+      problem: "AC completely dead — no cold air, family with infant at home, urgent same-day fix needed",
       priority: "urgent",
       requiredSkills: ["hvac", "refrigeration"],
       address: "2204 Elm St",
@@ -50,7 +58,7 @@ export const DEMO_WORKFLOW: Workflow = {
     {
       id: "j2",
       customerName: "Thornfield Office Park",
-      problem: "Rooftop RTU unit 3 tripping breaker — tenants complaining",
+      problem: "Rooftop RTU unit 3 tripping breaker — commercial building, tenants on upper floors without AC",
       priority: "urgent",
       requiredSkills: ["hvac", "commercial", "electrical"],
       address: "500 Commerce Blvd",
@@ -60,7 +68,7 @@ export const DEMO_WORKFLOW: Workflow = {
     {
       id: "j3",
       customerName: "Chen Family",
-      problem: "Annual tune-up — central AC",
+      problem: "Annual AC tune-up — central system, scheduled for 2pm, preventive maintenance",
       priority: "normal",
       requiredSkills: ["hvac"],
       address: "88 Maple Ave",
@@ -70,7 +78,7 @@ export const DEMO_WORKFLOW: Workflow = {
     {
       id: "j4",
       customerName: "Martinez",
-      problem: "Mini-split install, 2-zone — customer paid in full",
+      problem: "Mini-split install, 2-zone system — customer paid in full, needs completion today",
       priority: "high",
       requiredSkills: ["hvac", "electrical"],
       address: "317 Park Lane",
@@ -80,7 +88,7 @@ export const DEMO_WORKFLOW: Workflow = {
     {
       id: "j5",
       customerName: "Goldberg Apt 4B",
-      problem: "Thermostat replacement — won't hold temp",
+      problem: "Thermostat replacement — unit won't hold temperature set point, intermittent issue",
       priority: "normal",
       requiredSkills: ["hvac", "electrical"],
       address: "1402 Broadway",

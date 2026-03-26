@@ -54,3 +54,40 @@ export interface PlanResult {
   unassigned: string[];
   conflicts: string[];
 }
+
+export type AppPhase = "intake" | "review" | "dispatch";
+
+export interface DailyContext {
+  typedText: string;
+  transcribedText: string;
+  imageExtractedText: string;
+  rulesText: string;
+  mergedText: string;
+}
+
+export interface FollowUpQuestion {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+export type ScenarioType = "tech_unavailable" | "new_emergency" | "customer_escalated" | "rebalance";
+
+export interface ScenarioDelta {
+  assignmentsChanged: number;
+  jobsDelayed: number;
+  unassignedCount: number;
+  description: string;
+}
+
+export interface JobExplanation {
+  jobId: string;
+  summary: string;
+  bullets: string[];
+}
+
+export interface ActionOutput {
+  type: "briefings" | "etas";
+  title: string;
+  sections: { heading: string; body: string }[];
+}

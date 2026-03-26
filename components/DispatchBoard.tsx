@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import type { Job, PlanningStatus } from "@/lib/types";
+import type { Job, PlanningStatus, JobExplanation, ScenarioDelta } from "@/lib/types";
 import PriorityBadge from "./PriorityBadge";
+import WhyCard from "./WhyCard";
 
 interface Props {
   jobs: Job[];
   onStatusChange: (jobId: string, status: PlanningStatus) => void;
   conflicts: string[];
+  explanations?: Map<string, JobExplanation>;
+  scenarioDelta?: ScenarioDelta | null;
 }
 
 const COLUMNS: { id: PlanningStatus; label: string; color: string; dot: string }[] = [
@@ -20,9 +23,10 @@ const COLUMNS: { id: PlanningStatus; label: string; color: string; dot: string }
 interface JobCardProps {
   job: Job;
   onStatusChange: (jobId: string, status: PlanningStatus) => void;
+  explanation?: JobExplanation;
 }
 
-function JobCard({ job, onStatusChange }: JobCardProps) {
+function JobCard({ job, onStatusChange, explanation }: JobCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const nextStatus: Record<PlanningStatus, PlanningStatus> = {
@@ -81,6 +85,13 @@ function JobCard({ job, onStatusChange }: JobCardProps) {
             {job.address}
           </div>
         )}
+
+        {/* WhyCard — only when assigned and we have explanation */}
+        {job.assignedWorkerName && explanation && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <WhyCard explanation={explanation} />
+          </div>
+        )}
       </div>
 
       {/* Expanded actions */}
@@ -110,7 +121,13 @@ function JobCard({ job, onStatusChange }: JobCardProps) {
   );
 }
 
-export default function DispatchBoard({ jobs, onStatusChange, conflicts }: Props) {
+export default function DispatchBoard({
+  jobs,
+  onStatusChange,
+  conflicts,
+  explanations,
+  scenarioDelta,
+}: Props) {
   const isEmpty = jobs.length === 0;
 
   return (
@@ -120,7 +137,9 @@ export default function DispatchBoard({ jobs, onStatusChange, conflicts }: Props
         <div>
           <h2 className="text-sm font-semibold text-gray-900 tracking-tight">Dispatch Board</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {isEmpty ? "Run dispatch to populate the board" : `${jobs.length} jobs · click a card to update status`}
+            {isEmpty
+              ? "Build a plan to populate the board"
+              : `${jobs.length} jobs · click a card to update status`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -128,6 +147,16 @@ export default function DispatchBoard({ jobs, onStatusChange, conflicts }: Props
           <span className="text-xs text-gray-400">Live</span>
         </div>
       </div>
+
+      {/* Scenario delta banner */}
+      {scenarioDelta && (
+        <div className="rounded-xl bg-indigo-50 border border-indigo-200 px-3 py-2.5">
+          <p className="text-xs font-semibold text-indigo-800">{scenarioDelta.description}</p>
+          <p className="text-xs text-indigo-600 mt-0.5">
+            {scenarioDelta.assignmentsChanged} changed · {scenarioDelta.unassignedCount} unassigned
+          </p>
+        </div>
+      )}
 
       {/* Conflicts banner */}
       {conflicts.length > 0 && (
@@ -162,7 +191,12 @@ export default function DispatchBoard({ jobs, onStatusChange, conflicts }: Props
                   </div>
                 )}
                 {colJobs.map((job) => (
-                  <JobCard key={job.id} job={job} onStatusChange={onStatusChange} />
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    onStatusChange={onStatusChange}
+                    explanation={explanations?.get(job.id)}
+                  />
                 ))}
               </div>
             </div>
