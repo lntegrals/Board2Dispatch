@@ -1,19 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { PlanResult, Workflow, ActionOutput } from "@/lib/types";
 import { generateTechBriefings, generateCustomerETAs } from "@/lib/actions";
+import { encodeShareState } from "@/lib/shareState";
 
 interface Props {
   plan: PlanResult;
   workflow: Workflow;
+  triggerGenerate?: "briefings" | "etas" | null;
+  onTriggerConsumed?: () => void;
 }
 
-export default function ActionPanel({ plan, workflow }: Props) {
+export default function ActionPanel({ plan, workflow, triggerGenerate, onTriggerConsumed }: Props) {
   const [loading, setLoading] = useState<"briefings" | "etas" | null>(null);
   const [output, setOutput] = useState<ActionOutput | null>(null);
   const [streamingText, setStreamingText] = useState<string>("");
   const [copied, setCopied] = useState<number | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const handleBriefings = async () => {
     setLoading("briefings");
@@ -51,8 +55,27 @@ export default function ActionPanel({ plan, workflow }: Props) {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleShareLink = () => {
-    navigator.clipboard.writeText(window.location.href);
+  // Voice command trigger: auto-run generation when triggerGenerate is set
+  useEffect(() => {
+    if (!triggerGenerate || !!loading || plan.assignments.length === 0) return;
+    onTriggerConsumed?.();
+    if (triggerGenerate === "briefings") handleBriefings();
+    else handleETAs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerGenerate]);
+
+  const handleShareLink = async () => {
+    try {
+      const encoded = encodeShareState(workflow, plan);
+      const url = new URL(window.location.href);
+      url.searchParams.set("board", encoded);
+      await navigator.clipboard.writeText(url.toString());
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    } catch {
+      // Fallback: just copy base URL
+      navigator.clipboard.writeText(window.location.href);
+    }
   };
 
   return (
@@ -93,10 +116,25 @@ export default function ActionPanel({ plan, workflow }: Props) {
 
         <button
           onClick={handleShareLink}
-          className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-sm font-medium text-gray-600 transition-all text-left"
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all text-left ${
+            linkCopied
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-600"
+          }`}
         >
-          <span className="text-base">🔗</span>
-          <span>Share Dispatch Link</span>
+          {linkCopied ? (
+            <>
+              <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Link copied!</span>
+            </>
+          ) : (
+            <>
+              <span className="text-base">🔗</span>
+              <span>Share Dispatch Link</span>
+            </>
+          )}
         </button>
       </div>
 

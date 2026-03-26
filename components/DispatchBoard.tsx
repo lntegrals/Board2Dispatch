@@ -11,6 +11,7 @@ interface Props {
   conflicts: string[];
   explanations?: Map<string, JobExplanation>;
   scenarioDelta?: ScenarioDelta | null;
+  highlightJobId?: string | null;
 }
 
 const COLUMNS: { id: PlanningStatus; label: string; color: string; dot: string }[] = [
@@ -24,9 +25,10 @@ interface JobCardProps {
   job: Job;
   onStatusChange: (jobId: string, status: PlanningStatus) => void;
   explanation?: JobExplanation;
+  highlighted?: boolean;
 }
 
-function JobCard({ job, onStatusChange, explanation }: JobCardProps) {
+function JobCard({ job, onStatusChange, explanation, highlighted }: JobCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const nextStatus: Record<PlanningStatus, PlanningStatus> = {
@@ -46,7 +48,11 @@ function JobCard({ job, onStatusChange, explanation }: JobCardProps) {
   return (
     <div
       className={`rounded-xl border bg-white shadow-sm hover:shadow-md transition-all cursor-pointer group ${
-        job.priority === "urgent" ? "border-red-200 hover:border-red-300" : "border-gray-100 hover:border-gray-200"
+        highlighted
+          ? "ring-2 ring-indigo-400 ring-offset-1 border-indigo-300 shadow-indigo-100"
+          : job.priority === "urgent"
+          ? "border-red-200 hover:border-red-300"
+          : "border-gray-100 hover:border-gray-200"
       }`}
       onClick={() => setExpanded(!expanded)}
     >
@@ -127,6 +133,7 @@ export default function DispatchBoard({
   conflicts,
   explanations,
   scenarioDelta,
+  highlightJobId,
 }: Props) {
   const isEmpty = jobs.length === 0;
 
@@ -196,6 +203,7 @@ export default function DispatchBoard({
                     job={job}
                     onStatusChange={onStatusChange}
                     explanation={explanations?.get(job.id)}
+                    highlighted={job.id === highlightJobId}
                   />
                 ))}
               </div>

@@ -137,10 +137,11 @@ function fallbackParseVoiceCommand(transcript: string, workflow: Workflow): Voic
   if (/\b(unavailable|offline|called out|out sick|not available)\b/.test(normalized)) {
     const techId = findBestTechId(normalized, workflow);
     if (techId) {
+      const tech = workflow.workers.find((w) => w.id === techId);
       return {
         type: "tech_unavailable",
         params: { techId },
-        confirmation: "Marked technician as unavailable and replanning.",
+        confirmation: `Marked ${tech?.name ?? "technician"} as unavailable and replanning.`,
         confidence: "medium",
         rawTranscript: transcript,
       };
@@ -148,13 +149,83 @@ function fallbackParseVoiceCommand(transcript: string, workflow: Workflow): Voic
   }
 
   const status = extractStatus(normalized);
-  if (status && /\b(mark|set|change|update|move)\b/.test(normalized)) {
+  if (status) {
+    // Explicit verb: "mark/set/change/update/move X as Y"
+    const hasVerb = /\b(mark|set|change|update|move|put)\b/.test(normalized);
+    // Natural phrasing: "X is done", "X is en route", "[tech] is on the way to X"
+    const isNatural = /\b(is|are)\b/.test(normalized);
+
+    if (hasVerb || isNatural) {
+      // Try to match a job first, then fall back to finding a job by tech name
+      let jobId = findBestJobId(normalized, workflow);
+
+      // If we matched by tech name and the status is positional (en_route/done),
+      // find the job assigned to that tech instead
+      if (!jobId && isNatural) {
+        const techId = findBestTechId(normalized, workflow);
+        if (techId) {
+          const techJob = workflow.jobs.find(
+            (j) => j.assignedWorkerId === techId && j.status !== "done"
+          );
+          jobId = techJob?.id ?? null;
+        }
+      }
+
+      if (jobId) {
+        const job = workflow.jobs.find((j) => j.id === jobId);
+        const statusLabel = status.replace("_", " ");
+        return {
+          type: "status_change",
+          params: { jobId, status },
+          confirmation: `Updated ${job?.customerName ?? "job"} to ${statusLabel}.`,
+          confidence: hasVerb ? "high" : "medium",
+          rawTranscript: transcript,
+        };
+      }
+    }
+  }
+
+  // Reassign with numeric range: "customers 6 through 8", "jobs 3 to 5", "6-8"
+  const rangeMatch = normalized.match(/\b(\d+)\s*(?:through|thru|to|-)\s*(\d+)\b/);
+  if (rangeMatch) {
+    const techId = findBestTechId(normalized, workflow);
+    if (techId) {
+      const from = parseInt(rangeMatch[1], 10);
+      const to = parseInt(rangeMatch[2], 10);
+      // Map 1-based sequence numbers to job IDs
+      const jobIds = workflow.jobs
+        .filter((_, idx) => idx + 1 >= from && idx + 1 <= to)
+        .map((j) => j.id);
+      if (jobIds.length > 0) {
+        const tech = workflow.workers.find((w) => w.id === techId);
+        const names = jobIds
+          .map((id) => workflow.jobs.find((j) => j.id === id)?.customerName)
+          .filter(Boolean)
+          .join(", ");
+        return {
+          type: "reassign",
+          params: { techId, jobIds },
+          confirmation: `Reassigning ${names} to ${tech?.name ?? "technician"}.`,
+          confidence: "high",
+          rawTranscript: transcript,
+        };
+      }
+    }
+  }
+
+  // Reassign: "assign/give/send/have/let [person] do/take/handle [job]"
+  const reassignVerb = /\b(assign|reassign|give|send|have|let|move|put)\b/.test(normalized);
+  const reassignPrep = /\b(to|for|do|take|handle|cover)\b/.test(normalized);
+  if (reassignVerb && reassignPrep) {
+    const techId = findBestTechId(normalized, workflow);
     const jobId = findBestJobId(normalized, workflow);
-    if (jobId) {
+    if (techId && jobId) {
+      const tech = workflow.workers.find((w) => w.id === techId);
+      const job = workflow.jobs.find((j) => j.id === jobId);
       return {
-        type: "status_change",
-        params: { jobId, status },
-        confirmation: `Updated job status to ${status.replace("_", " ")}.`,
+        type: "reassign",
+        params: { techId, jobId },
+        confirmation: `Reassigning ${job?.customerName ?? "job"} to ${tech?.name ?? "technician"}.`,
         confidence: "medium",
         rawTranscript: transcript,
       };

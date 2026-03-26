@@ -36,21 +36,67 @@ Return ONLY this JSON and nothing else:
   ]
 }`;
 
-const VOICE_SYSTEM_PROMPT = `You are a voice command interpreter for an HVAC dispatch board.
-Parse the spoken command and return ONLY valid JSON — no markdown, no prose.
+const VOICE_SYSTEM_PROMPT = `You are a voice command interpreter for an HVAC dispatch board. Dispatchers speak casually — use informal phrasing, contractions, "gonna", "actually", partial names, and imprecise references. Your job is to figure out the intent and map it to a board action.
+
+CRITICAL RULE: Be GENEROUS. Real speech is messy. Only return "unknown" if you truly cannot infer any board action. When in doubt, pick the most likely intent and set confidence to "medium".
 
 === COMMAND TYPES ===
-status_change, tech_unavailable, new_emergency, customer_escalated, rebalance, reassign, generate_briefings, generate_etas, query, unknown
+status_change   — change a job's status (unassigned → assigned → en_route → done)
+tech_unavailable — mark a tech as out/sick/unavailable and replan
+new_emergency   — add a new urgent/emergency job
+customer_escalated — escalate an existing customer's priority
+rebalance       — re-optimize all assignments from scratch
+reassign        — move one or more jobs from any tech to a specific tech
+generate_briefings — create technician briefing documents
+generate_etas   — create customer ETA text messages
+query           — answer a question about the board state
+unknown         — (last resort) truly unintelligible
+
+=== HOW TO INTERPRET NATURAL SPEECH ===
+
+REASSIGN examples (all → type "reassign"):
+  "Anna's gonna take customers 6 through 8"
+  "Actually, Anna is gonna come in to do customers 6-8"
+  "Give Mike's jobs to Sarah"
+  "Have John handle the Smith and Jones jobs"
+  "Move jobs 2 and 3 over to Tom"
+  "Put Anna on the last three jobs"
+  "Let Sarah take over from Mike"
+
+STATUS CHANGE examples (→ type "status_change"):
+  "Smith is done" / "Smith got finished" / "close out Smith"
+  "John is en route" / "John's heading over" / "John is on his way"
+  "Mark the Anderson job as done"
+  "Jones is finished, move it over"
+  "The Miller job just got completed"
+
+TECH UNAVAILABLE (→ type "tech_unavailable"):
+  "Mike called out" / "Mike's sick" / "Tom can't make it today"
+  "Sarah's not coming in" / "Remove John from the board"
+
+NEW EMERGENCY (→ type "new_emergency"):
+  "Just got an emergency call, no AC at 123 Main"
+  "Add an urgent job for the Rodriguez family, no heat"
+
+REBALANCE (→ type "rebalance"):
+  "Redo the whole board" / "Re-run dispatch" / "Redistribute everything" / "Shuffle it"
+
+=== NUMBER / RANGE REFERENCES ===
+Jobs and techs are listed with sequence numbers (#1, #2, ...) in the board state below.
+"customer 6" / "job 6" / "number 6" → job with sequence #6
+"customers 6 through 8" / "jobs 6-8" / "6 to 8" → jobIds for jobs #6, #7, #8
+"the last two jobs" → last two jobs in the list
+"all of Mike's jobs" → all jobs currently assigned to Mike
 
 === CURRENT BOARD STATE ===
 {{CONTEXT}}
 
-Return JSON:
+Return ONLY valid JSON (no markdown, no prose):
 {
   "type": "<VoiceCommandType>",
   "params": {
     "jobId": "<string or null>",
-    "jobIds": ["<id1>", "<id2>"],
+    "jobIds": ["<id1>", "<id2>", ...],
     "techId": "<string or null>",
     "status": "<unassigned|assigned|en_route|done or null>",
     "emergencyCustomerName": "<string or null>",
@@ -58,7 +104,7 @@ Return JSON:
     "emergencyAddress": "<string or null>",
     "queryAnswer": "<one sentence answer for query type, null otherwise>"
   },
-  "confirmation": "<one sentence>",
+  "confirmation": "<friendly one-sentence confirmation using actual names, e.g. 'Reassigning Miller, Wilson, and Moore to Anna'>",
   "confidence": "high|medium|low"
 }`;
 
@@ -108,17 +154,26 @@ function buildDispatchSummary(plan: PlanResult, workflow: Workflow): string {
 
 function buildVoiceContext(workflow: Workflow): string {
   const techs = workflow.workers
-    .map((w) => `TECH id=${w.id} name="${w.name}" status=${w.status}`)
-    .join("\n");
-
-  const jobs = workflow.jobs
-    .map((j) => {
-      const assigned = j.assignedWorkerName ? ` assigned_to="${j.assignedWorkerName}"` : "";
-      return `JOB id=${j.id} customer="${j.customerName}" status=${j.status} priority=${j.priority}${assigned}`;
+    .map((w, i) => {
+      const activeJobs = workflow.jobs.filter((j) => j.assignedWorkerId === w.id && j.status !== "done");
+      const jobInfo = activeJobs.length
+        ? ` jobs=[${activeJobs.map((j) => `"${j.customerName}"(${j.id})`).join(", ")}]`
+        : " jobs=[]";
+      return `  #${i + 1} TECH id=${w.id} name="${w.name}" status=${w.status}${jobInfo}`;
     })
     .join("\n");
 
-  return `TECHNICIANS:\n${techs}\n\nJOBS:\n${jobs}`;
+  const jobs = workflow.jobs
+    .map((j, i) => {
+      const assigned = j.assignedWorkerName
+        ? ` assigned_to="${j.assignedWorkerName}"(${j.assignedWorkerId})`
+        : " unassigned";
+      const address = j.address ? ` addr="${j.address}"` : "";
+      return `  #${i + 1} JOB id=${j.id} customer="${j.customerName}" problem="${j.problem}" status=${j.status} priority=${j.priority}${assigned}${address}`;
+    })
+    .join("\n");
+
+  return `TECHNICIANS (${workflow.workers.length} total):\n${techs}\n\nJOBS (${workflow.jobs.length} total):\n${jobs}`;
 }
 
 export async function parseDispatchWithAI(inputText: string, rulesText = ""): Promise<ParsedOutput> {

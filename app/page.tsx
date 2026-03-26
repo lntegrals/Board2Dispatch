@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type {
   Workflow,
   PlanningStatus,
@@ -18,6 +18,7 @@ import { buildExplanationMap } from "@/lib/explanations";
 import { applyScenario } from "@/lib/scenarios";
 import type { ScenarioPayload } from "@/lib/scenarios";
 import { DEMO_WORKFLOW, DEMO_CONTEXT } from "@/lib/demoData";
+import { decodeShareState } from "@/lib/shareState";
 import IntakePanel from "@/components/IntakePanel";
 import FusionReview from "@/components/FusionReview";
 import StructurePanel from "@/components/StructurePanel";
@@ -25,6 +26,7 @@ import DispatchBoard from "@/components/DispatchBoard";
 import ScenarioBar from "@/components/ScenarioBar";
 import ActionPanel from "@/components/ActionPanel";
 import VoiceCommandBar from "@/components/VoiceCommandBar";
+import GeneratingScreen from "@/components/GeneratingScreen";
 import type { VoiceCommand } from "@/lib/voiceCommands";
 
 const EMPTY_WORKFLOW: Workflow = { workers: [], jobs: [], rules: [] };
@@ -51,6 +53,34 @@ export default function Home() {
   const [planLoading, setPlanLoading] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [triggerGenerate, setTriggerGenerate] = useState<"briefings" | "etas" | null>(null);
+  const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Stable refs for voice command handler (avoids stale closure)
+  const workflowRef = useRef(workflow);
+  const planRef = useRef(plan);
+  useEffect(() => { workflowRef.current = workflow; }, [workflow]);
+  useEffect(() => { planRef.current = plan; }, [plan]);
+
+  // Restore shared board state from URL on first load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shared = params.get("board");
+    if (!shared) return;
+    const state = decodeShareState(shared);
+    if (!state) return;
+    setWorkflow(state.workflow);
+    setPlan(state.plan);
+    setExplanations(buildExplanationMap(state.plan, state.workflow));
+    setConflicts(state.plan.conflicts);
+    setPhase("dispatch");
+    // Clean the URL so refreshing doesn't re-load stale shared state
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete("board");
+    window.history.replaceState({}, "", clean.toString());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // INTAKE → REVIEW
   const handleUnderstandToday = async (context: DailyContext) => {
@@ -179,17 +209,40 @@ export default function Home() {
   };
 
   const handleVoiceCommand = useCallback((command: VoiceCommand) => {
+    const currentWorkflow = workflowRef.current;
+    const currentPlan = planRef.current;
+
     switch (command.type) {
       case "status_change":
         if (command.params.jobId && command.params.status) {
-          handleStatusChange(command.params.jobId, command.params.status);
+          const status = command.params.status;
+          const jobId = command.params.jobId;
+          setWorkflow((prev) => ({
+            ...prev,
+            jobs: prev.jobs.map((j) => (j.id === jobId ? { ...j, status } : j)),
+          }));
+          // Flash the card that moved
+          if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+          setHighlightJobId(jobId);
+          highlightTimerRef.current = setTimeout(() => setHighlightJobId(null), 2000);
         }
         break;
-      case "tech_unavailable":
-        handleScenario({ type: "tech_unavailable", techId: command.params.techId });
+      case "tech_unavailable": {
+        if (!currentPlan || !command.params.techId) break;
+        const result = applyScenario(currentWorkflow, currentPlan, {
+          type: "tech_unavailable",
+          techId: command.params.techId,
+        });
+        setWorkflow(result.workflow);
+        setPlan(result.plan);
+        setExplanations(buildExplanationMap(result.plan, result.workflow));
+        setConflicts(result.plan.conflicts);
+        setScenarioDelta(result.delta);
         break;
-      case "new_emergency":
-        handleScenario({
+      }
+      case "new_emergency": {
+        if (!currentPlan) break;
+        const result = applyScenario(currentWorkflow, currentPlan, {
           type: "new_emergency",
           emergencyJob: {
             customerName: command.params.emergencyCustomerName,
@@ -197,13 +250,36 @@ export default function Home() {
             address: command.params.emergencyAddress,
           },
         });
+        setWorkflow(result.workflow);
+        setPlan(result.plan);
+        setExplanations(buildExplanationMap(result.plan, result.workflow));
+        setConflicts(result.plan.conflicts);
+        setScenarioDelta(result.delta);
         break;
-      case "customer_escalated":
-        handleScenario({ type: "customer_escalated", jobId: command.params.jobId });
+      }
+      case "customer_escalated": {
+        if (!currentPlan || !command.params.jobId) break;
+        const result = applyScenario(currentWorkflow, currentPlan, {
+          type: "customer_escalated",
+          jobId: command.params.jobId,
+        });
+        setWorkflow(result.workflow);
+        setPlan(result.plan);
+        setExplanations(buildExplanationMap(result.plan, result.workflow));
+        setConflicts(result.plan.conflicts);
+        setScenarioDelta(result.delta);
         break;
-      case "rebalance":
-        handleScenario({ type: "rebalance" });
+      }
+      case "rebalance": {
+        if (!currentPlan) break;
+        const result = applyScenario(currentWorkflow, currentPlan, { type: "rebalance" });
+        setWorkflow(result.workflow);
+        setPlan(result.plan);
+        setExplanations(buildExplanationMap(result.plan, result.workflow));
+        setConflicts(result.plan.conflicts);
+        setScenarioDelta(result.delta);
         break;
+      }
       case "reassign": {
         const { techId, jobIds, jobId } = command.params;
         if (!techId) break;
@@ -223,13 +299,22 @@ export default function Home() {
         });
         break;
       }
+      case "generate_briefings":
+        setTriggerGenerate("briefings");
+        break;
+      case "generate_etas":
+        setTriggerGenerate("etas");
+        break;
       // query: answer already spoken by VoiceCommandBar via speechSynthesis
-      // generate_*: confirmation text spoken as a hint; user still clicks the button
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── INTAKE phase ──────────────────────────────────────────────────────────
+  if (intakeLoading) {
+    return <GeneratingScreen mode="intake" />;
+  }
+
   if (phase === "intake") {
     return (
       <IntakePanel
@@ -242,6 +327,10 @@ export default function Home() {
   }
 
   // ── REVIEW phase ──────────────────────────────────────────────────────────
+  if (planLoading) {
+    return <GeneratingScreen mode="plan" />;
+  }
+
   if (phase === "review") {
     return (
       <FusionReview
@@ -383,7 +472,12 @@ export default function Home() {
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Actions</p>
             {plan && (
-              <ActionPanel plan={plan} workflow={workflow} />
+              <ActionPanel
+                plan={plan}
+                workflow={workflow}
+                triggerGenerate={triggerGenerate}
+                onTriggerConsumed={() => setTriggerGenerate(null)}
+              />
             )}
           </div>
         </div>
@@ -396,6 +490,7 @@ export default function Home() {
             conflicts={conflicts}
             explanations={explanations}
             scenarioDelta={scenarioDelta}
+            highlightJobId={highlightJobId}
           />
         </div>
       </main>

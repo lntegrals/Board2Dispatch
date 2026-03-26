@@ -70,6 +70,16 @@ body {
   animation: phase-fade-in 0.25s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
+/* Voice command success toast */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in-up 0.18s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
 /* Better base typography */
 h1, h2, h3, h4 {
   text-wrap: balance;
