@@ -30,6 +30,7 @@ export function useDispatchVoice(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const finalTranscriptRef = useRef("");
+  const latestTranscriptRef = useRef("");
   // Keep stable refs to workflow/plan so onend closure stays fresh
   const workflowRef = useRef(workflow);
   const planRef = useRef(plan);
@@ -51,6 +52,7 @@ export function useDispatchVoice(
     }
 
     finalTranscriptRef.current = "";
+    latestTranscriptRef.current = "";
     setLiveTranscript("");
     setError(null);
     setPendingCommand(null);
@@ -62,22 +64,30 @@ export function useDispatchVoice(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
-      let interim = "";
-      let final = "";
-      for (let i = 0; i < event.results.length; i++) {
+      let finalChunk = "";
+      let interimChunk = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const piece = `${event.results[i][0].transcript}`.trim();
+        if (!piece) continue;
         if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
+          finalChunk += `${piece} `;
         } else {
-          interim += event.results[i][0].transcript;
+          interimChunk += `${piece} `;
         }
       }
-      setLiveTranscript(final || interim);
-      if (final) finalTranscriptRef.current = final;
+
+      if (finalChunk) {
+        finalTranscriptRef.current = `${finalTranscriptRef.current} ${finalChunk}`.replace(/\s+/g, " ").trim();
+      }
+
+      const composed = `${finalTranscriptRef.current} ${interimChunk}`.replace(/\s+/g, " ").trim();
+      latestTranscriptRef.current = composed;
+      setLiveTranscript(composed);
     };
 
     recognition.onend = async () => {
       setIsListening(false);
-      const transcript = finalTranscriptRef.current.trim();
+      const transcript = (finalTranscriptRef.current || latestTranscriptRef.current).trim();
       if (!transcript) return;
 
       setIsProcessing(true);
