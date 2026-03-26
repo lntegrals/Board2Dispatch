@@ -117,11 +117,11 @@ export default function VoiceCommandBar({ workflow, plan, onCommand }: Props) {
   const showUnknownCard = showCard && pendingCommand.type === "unknown";
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+    <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:bottom-6 sm:right-6 z-40 flex flex-col items-end gap-3 pointer-events-none">
 
       {/* Success toast — appears after instant execution */}
       {executedText && (
-        <div className="bg-gray-900 text-white rounded-xl px-4 py-2.5 shadow-xl flex items-center gap-2.5 max-w-[300px] animate-fade-in">
+        <div className="bg-gray-900 text-white rounded-xl px-4 py-2.5 shadow-xl flex items-center gap-2.5 w-full sm:w-auto sm:max-w-[300px] animate-fade-in pointer-events-auto">
           <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
             <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
@@ -133,7 +133,7 @@ export default function VoiceCommandBar({ workflow, plan, onCommand }: Props) {
 
       {/* Live transcript while listening */}
       {isListening && !pendingCommand && (
-        <div className="bg-white rounded-xl border border-red-100 shadow-md px-4 py-2.5 max-w-[260px]">
+        <div className="bg-white rounded-xl border border-red-100 shadow-md px-4 py-2.5 w-full sm:w-auto sm:max-w-[260px] pointer-events-auto">
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <span className="text-xs font-medium text-red-600">Listening</span>
@@ -146,7 +146,7 @@ export default function VoiceCommandBar({ workflow, plan, onCommand }: Props) {
 
       {/* Processing indicator */}
       {isProcessing && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-md px-4 py-2.5 max-w-[260px] flex items-center gap-2">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-md px-4 py-2.5 w-full sm:w-auto sm:max-w-[260px] flex items-center gap-2 pointer-events-auto">
           <svg className="animate-spin w-3.5 h-3.5 text-indigo-500" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -157,14 +157,14 @@ export default function VoiceCommandBar({ workflow, plan, onCommand }: Props) {
 
       {/* Error toast */}
       {error && !pendingCommand && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 max-w-[260px]">
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 w-full sm:w-auto sm:max-w-[260px] pointer-events-auto">
           <p className="text-xs text-red-700">{error}</p>
         </div>
       )}
 
       {/* Unknown command card */}
       {showUnknownCard && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-72 p-4">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full sm:w-72 p-4 pointer-events-auto">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-600">Couldn&apos;t understand</span>
             <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
@@ -181,7 +181,7 @@ export default function VoiceCommandBar({ workflow, plan, onCommand }: Props) {
 
       {/* Low-confidence card — still shows a countdown */}
       {showLowConfCard && (
-        <div className="bg-white rounded-2xl border border-amber-200 shadow-xl w-72 p-4">
+        <div className="bg-white rounded-2xl border border-amber-200 shadow-xl w-full sm:w-72 p-4 pointer-events-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="w-5 h-5 rounded-lg bg-amber-100 flex items-center justify-center">
@@ -221,7 +221,8 @@ export default function VoiceCommandBar({ workflow, plan, onCommand }: Props) {
         onClick={handleMicClick}
         disabled={isProcessing}
         title={isListening ? "Tap to stop" : "Voice command"}
-        className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all
+        aria-label={isListening ? "Stop voice command listening" : "Start voice command listening"}
+        className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all pointer-events-auto
           ${isListening
             ? "bg-red-500 ring-4 ring-red-300 animate-pulse"
             : isProcessing

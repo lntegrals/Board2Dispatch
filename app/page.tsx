@@ -354,22 +354,22 @@ export default function Home() {
     <div className="min-h-screen bg-slate-50 text-gray-900 font-sans">
       {/* Top bar */}
       <header className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
               </svg>
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="text-sm font-bold text-gray-900 tracking-tight">Board2Dispatch</span>
-              <span className="ml-2 text-xs text-gray-400">HVAC · AI Dispatch</span>
+              <span className="ml-2 text-xs text-gray-400 hidden sm:inline">HVAC · AI Dispatch</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3 sm:gap-5">
             {workflow.jobs.length > 0 && (
-              <div className="flex items-center gap-4 text-xs text-gray-400">
+              <div className="hidden md:flex items-center gap-4 text-xs text-gray-400">
                 <span className="tabular-nums">
                   <strong className="text-gray-700">{workflow.workers.length}</strong> techs
                 </span>
@@ -397,11 +397,11 @@ export default function Home() {
             )}
             <button
               onClick={() => setPhase("intake")}
-              className="text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors"
+              className="text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors whitespace-nowrap"
             >
               ← New day
             </button>
-            <div className="flex items-center gap-1.5">
+            <div className="hidden sm:flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-gray-400">Live</span>
             </div>
@@ -410,11 +410,11 @@ export default function Home() {
       </header>
 
       {/* Main dispatch layout */}
-      <main className="max-w-screen-2xl mx-auto px-6 py-6 h-[calc(100vh-56px)] flex gap-5">
+      <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6 min-h-[calc(100vh-56px)] flex flex-col lg:flex-row gap-4 sm:gap-5">
 
         {/* LEFT: Advanced / StructurePanel — collapsible */}
         {showAdvanced && (
-          <div className="w-[300px] flex-shrink-0 bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col overflow-hidden phase-fade-in">
+          <div className="w-full lg:w-[300px] lg:flex-shrink-0 bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-5 flex flex-col overflow-hidden phase-fade-in max-h-[70vh] lg:max-h-none">
             <div className="mb-3 flex items-center justify-between flex-shrink-0">
               <div>
                 <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Advanced</h2>
@@ -440,12 +440,12 @@ export default function Home() {
         )}
 
         {/* CENTER: Controls + ScenarioBar + ActionPanel */}
-        <div className="w-[280px] flex-shrink-0 flex flex-col gap-4">
+        <div className="w-full lg:w-[280px] lg:flex-shrink-0 flex flex-col gap-4">
           {/* Advanced toggle */}
           {!showAdvanced && (
             <button
               onClick={() => setShowAdvanced(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 text-xs text-gray-500 font-medium shadow-sm transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 text-xs text-gray-500 font-medium shadow-sm transition-all w-full"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -483,7 +483,7 @@ export default function Home() {
         </div>
 
         {/* RIGHT: Dispatch Board */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col overflow-hidden flex-1">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-5 flex flex-col overflow-hidden flex-1 min-h-[420px]">
           <DispatchBoard
             jobs={workflow.jobs}
             onStatusChange={handleStatusChange}

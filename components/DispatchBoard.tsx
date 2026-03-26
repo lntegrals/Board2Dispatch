@@ -176,11 +176,11 @@ export default function DispatchBoard({
       )}
 
       {/* Kanban columns */}
-      <div className="flex gap-3 flex-1 overflow-x-auto pb-2">
+      <div className="flex gap-3 flex-1 overflow-x-auto pb-2 snap-x snap-mandatory">
         {COLUMNS.map((col) => {
           const colJobs = jobs.filter((j) => j.status === col.id);
           return (
-            <div key={col.id} className="flex flex-col gap-2 min-w-[200px] flex-1">
+            <div key={col.id} className="flex flex-col gap-2 min-w-[78vw] sm:min-w-[220px] md:min-w-[200px] flex-1 snap-start">
               {/* Column header */}
               <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${col.color}`}>
                 <div className={`w-2 h-2 rounded-full ${col.dot}`} />
@@ -214,7 +214,7 @@ export default function DispatchBoard({
 
       {/* Legend */}
       {!isEmpty && (
-        <div className="flex items-center gap-4 pt-2 border-t border-gray-100">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4 pt-2 border-t border-gray-100">
           <span className="text-xs text-gray-400">Priority:</span>
           {(["urgent", "high", "normal", "low"] as const).map((p) => (
             <div key={p} className="flex items-center gap-1.5">

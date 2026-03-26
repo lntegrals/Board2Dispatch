@@ -111,7 +111,7 @@ export default function IntakePanel({ onSubmit, loading, onLoadDemo, error }: Pr
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50/30 flex flex-col">
       {/* Header */}
       <header className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -131,14 +131,14 @@ export default function IntakePanel({ onSubmit, loading, onLoadDemo, error }: Pr
       </header>
 
       {/* Hero */}
-      <div className="max-w-3xl mx-auto w-full px-6 pt-12 pb-6">
+      <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 pt-8 sm:pt-12 pb-6">
         <div className="mb-2">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
             Dispatch Copilot
           </span>
         </div>
-        <h1 className="text-3xl font-bold text-gray-900 tracking-tight leading-tight mb-2">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight leading-tight mb-2">
           What&rsquo;s happened since yesterday?
         </h1>
         <p className="text-gray-500 text-base">
@@ -147,7 +147,7 @@ export default function IntakePanel({ onSubmit, loading, onLoadDemo, error }: Pr
       </div>
 
       {/* Main content */}
-      <div className="max-w-3xl mx-auto w-full px-6 pb-12 flex flex-col gap-6">
+      <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 pb-12 flex flex-col gap-6">
 
         {/* Quick chips */}
         <div className="flex flex-wrap gap-2">
@@ -223,7 +223,7 @@ export default function IntakePanel({ onSubmit, loading, onLoadDemo, error }: Pr
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
             Whiteboard Photo
           </label>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             {/* Take Photo button */}
             <button
               onClick={() => cameraRef.current?.click()}
