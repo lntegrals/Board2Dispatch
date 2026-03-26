@@ -62,6 +62,39 @@ Return JSON:
   "confidence": "high|medium|low"
 }`;
 
+const VOICE_RECOVERY_SYSTEM_PROMPT = `You are a fault-tolerant voice command interpreter for an HVAC dispatch board.
+Your job is to recover intent from imperfect speech transcripts.
+You MUST infer the most likely actionable command using board context.
+Only use unknown when the transcript is completely unrelated to dispatch work.
+
+=== RECOVERY RULES ===
+- Resolve misheard names to the closest technician/customer in context.
+- Treat variants like "on route"/"in route"/"en route" as en_route.
+- Treat "done"/"complete"/"finished" as done.
+- If user asks to "move" or "set" a job to a status, return status_change.
+- If user says a tech is unavailable/offline/sick, return tech_unavailable.
+- If user asks to rebalance/re-run dispatch, return rebalance.
+
+=== CURRENT BOARD STATE ===
+{{CONTEXT}}
+
+Return JSON:
+{
+  "type": "<VoiceCommandType>",
+  "params": {
+    "jobId": "<string or null>",
+    "jobIds": ["<id1>", "<id2>"],
+    "techId": "<string or null>",
+    "status": "<unassigned|assigned|en_route|done or null>",
+    "emergencyCustomerName": "<string or null>",
+    "emergencyProblem": "<string or null>",
+    "emergencyAddress": "<string or null>",
+    "queryAnswer": "<one sentence answer for query type, null otherwise>"
+  },
+  "confirmation": "<one sentence>",
+  "confidence": "high|medium|low"
+}`;
+
 const IMAGE_SYSTEM_PROMPT = `You are an OCR assistant for an HVAC dispatch office.
 Extract ALL visible text from the image exactly as written.
 If the image is too blurry, unclear, or contains no relevant dispatch text, respond with exactly: UNCLEAR
@@ -106,19 +139,32 @@ function buildDispatchSummary(plan: PlanResult, workflow: Workflow): string {
   return lines.join("\n");
 }
 
-function buildVoiceContext(workflow: Workflow): string {
+function buildVoiceContext(workflow: Workflow, plan?: PlanResult | null): string {
   const techs = workflow.workers
-    .map((w) => `TECH id=${w.id} name="${w.name}" status=${w.status}`)
+    .map((w) => `TECH id=${w.id} name="${w.name}" status=${w.status} skills=[${w.skills.join(", ")}]`)
     .join("\n");
 
   const jobs = workflow.jobs
     .map((j) => {
       const assigned = j.assignedWorkerName ? ` assigned_to="${j.assignedWorkerName}"` : "";
-      return `JOB id=${j.id} customer="${j.customerName}" status=${j.status} priority=${j.priority}${assigned}`;
+      const addr = j.address ? ` address="${j.address}"` : "";
+      return `JOB id=${j.id} customer="${j.customerName}" problem="${j.problem}" status=${j.status} priority=${j.priority}${assigned}${addr}`;
     })
     .join("\n");
 
-  return `TECHNICIANS:\n${techs}\n\nJOBS:\n${jobs}`;
+  const assignments = plan?.assignments?.length
+    ? plan.assignments
+        .map((a) => `ASSIGNMENT job_id=${a.jobId} tech_id=${a.workerId} tech_name="${a.workerName}" score=${a.score.toFixed(2)}`)
+        .join("\n")
+    : "No active assignments in plan context.";
+
+  return `TECHNICIANS:\n${techs}\n\nJOBS:\n${jobs}\n\nPLAN:\n${assignments}`;
+}
+
+function isUnknownVoiceType(parsed: unknown): boolean {
+  if (!parsed || typeof parsed !== "object") return true;
+  const value = (parsed as { type?: unknown }).type;
+  return value === "unknown" || typeof value !== "string";
 }
 
 export async function parseDispatchWithAI(inputText: string, rulesText = ""): Promise<ParsedOutput> {
@@ -130,13 +176,27 @@ export async function parseDispatchWithAI(inputText: string, rulesText = ""): Pr
   return JSON.parse(extractJsonObject(raw)) as ParsedOutput;
 }
 
-export async function parseVoiceWithAI(transcript: string, workflow: Workflow): Promise<unknown> {
-  const context = buildVoiceContext(workflow);
-  const raw = await callMinimaxText(VOICE_SYSTEM_PROMPT.replace("{{CONTEXT}}", context), transcript, {
+export async function parseVoiceWithAI(
+  transcript: string,
+  workflow: Workflow,
+  plan?: PlanResult | null
+): Promise<unknown> {
+  const context = buildVoiceContext(workflow, plan);
+  const strictRaw = await callMinimaxText(VOICE_SYSTEM_PROMPT.replace("{{CONTEXT}}", context), transcript, {
     temperature: 0.1,
     maxOutputTokens: 512,
   });
-  return JSON.parse(extractJsonObject(raw));
+
+  const strictParsed = JSON.parse(extractJsonObject(strictRaw)) as unknown;
+  if (!isUnknownVoiceType(strictParsed)) return strictParsed;
+
+  const recoveryInput = `Transcript: ${transcript}\n\nInterpret this against the current board and recover the most likely command.`;
+  const recoveryRaw = await callMinimaxText(VOICE_RECOVERY_SYSTEM_PROMPT.replace("{{CONTEXT}}", context), recoveryInput, {
+    temperature: 0.2,
+    maxOutputTokens: 512,
+  });
+
+  return JSON.parse(extractJsonObject(recoveryRaw));
 }
 
 export async function generateActionWithAI(kind: "briefings" | "etas", plan: PlanResult, workflow: Workflow): Promise<unknown> {

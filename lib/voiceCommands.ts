@@ -173,7 +173,7 @@ export async function parseVoiceCommand(
   workflow: Workflow,
   plan: PlanResult | null
 ): Promise<VoiceCommand> {
-  void plan;
+  const localCandidate = fallbackParseVoiceCommand(transcript, workflow);
 
   const localCandidate = fallbackParseVoiceCommand(transcript, workflow);
 
@@ -181,7 +181,7 @@ export async function parseVoiceCommand(
     const response = await fetch("/api/ai/voice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript, workflow }),
+      body: JSON.stringify({ transcript, workflow, plan }),
     });
 
     if (!response.ok) throw new Error(`Voice route error: ${response.status}`);
@@ -189,6 +189,10 @@ export async function parseVoiceCommand(
     if (!data.command) throw new Error("Empty command response");
 
     const aiCommand: VoiceCommand = { ...data.command, rawTranscript: transcript };
+
+    if (localCandidate && (aiCommand.type === "unknown" || aiCommand.confidence === "low")) {
+      return localCandidate;
+    }
 
     if (isRecognized(aiCommand)) return aiCommand;
     if (localCandidate) return localCandidate;
